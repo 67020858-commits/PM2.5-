@@ -3,290 +3,302 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบรายงานและทำนาย PM2.5 (SVR vs ARIMA)</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>รายงานผล PM2.5 สนามกีฬาจังหวัดพะเยา (GEE Layer)</title>
+
+    <!-- Leaflet CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://cdn.jsdelivr.net/npm/Chart.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Chart.js & Plugin DataLabels -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+
     <style>
-        body { background-color: #f4f6f9; font-family: 'Kanit', sans-serif; padding: 20px; }
-        .card { border-radius: 12px; border: none; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        .badge-aqi { padding: 8px 16px; border-radius: 20px; font-weight: 500; }
-        #map { height: 480px; border-radius: 8px; z-index: 1; }
-        .chart-container { position: relative; height: 340px; width: 100%; }
-        .legend-box {
-            background: rgba(255, 255, 255, 0.9);
-            padding: 10px 14px;
-            border-radius: 8px;
-            font-size: 12px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-            line-height: 18px;
-        }
-        .legend-color {
-            width: 14px;
-            height: 14px;
-            display: inline-block;
-            margin-right: 6px;
-            border-radius: 3px;
-            vertical-align: middle;
-        }
+        body { font-family: 'Kanit', sans-serif; background-color: #f4f6f9; margin: 0; padding: 24px; color: #1e293b; }
+        .container { max-width: 1050px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+        .card { background: #ffffff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); position: relative; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        .header-title { font-size: 1.2rem; font-weight: 700; color: #0f172a; margin: 0; }
+        .controls-group { display: flex; align-items: center; gap: 12px; }
+        input[type="date"] { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; }
+        .btn-primary { background-color: #2563eb; color: white; border: none; padding: 9px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+        .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
+        .summary-card { background-color: #f8fafc; border-radius: 8px; padding: 16px; text-align: center; }
+        .summary-title { font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 8px; }
+        .summary-value { font-size: 1.6rem; font-weight: 800; color: #0f172a; }
+        .badge { padding: 6px 16px; border-radius: 20px; color: white; font-size: 0.9rem; font-weight: 600; display: inline-block; }
+        .bg-good { background-color: #10b981; }
+        .bg-moderate { background-color: #eab308; color: #1e293b; }
+        .bg-orange { background-color: #f97316; }
+        .bg-danger { background-color: #ef4444; }
+
+        #map { height: 460px; width: 100%; border-radius: 8px; background-color: #1e293b; z-index: 1; }
+        .chart-container { position: relative; height: 360px; width: 100%; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; text-align: center; font-size: 0.95rem; margin-top: 12px; }
+        th, td { padding: 14px 10px; border-bottom: 1px solid #f1f5f9; }
+        th { background-color: #f8fafc; color: #475569; }
+
+        .loading-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255, 255, 255, 0.92); display: flex; flex-direction: column; justify-content: center; align-items: center; border-radius: 12px; z-index: 1000; }
+        .progress-box { width: 80%; max-width: 400px; text-align: center; }
+        .progress-bar-container { width: 100%; height: 14px; background-color: #e2e8f0; border-radius: 20px; overflow: hidden; margin-top: 10px; }
+        .progress-bar { width: 0%; height: 100%; background: #2563eb; transition: width 0.3s; }
     </style>
 </head>
 <body>
-<div class="container max-width-lg">
-    
-    <!-- Header -->
-    <div class="card p-4 mb-4">
-        <div class="row align-items-center">
-            <div class="col-md-7">
-                <h4 class="m-0 font-weight-bold">📊 รายงานผล PM2.5 และเปรียบเทียบโมเดล (SVR vs ARIMA)</h4>
+
+    <main class="container">
+        <div class="card">
+            <div class="header-bar">
+                <h1 class="header-title">📊 รายงานและพยากรณ์ PM2.5 สนามกีฬาจังหวัดพะเยา</h1>
+                <div class="controls-group">
+                    <label for="dateSelect"><strong>เลือกวันที่:</strong></label>
+                    <input type="date" id="dateSelect">
+                    <button class="btn-primary" onclick="fetchData()">ประมวลผล</button>
+                </div>
             </div>
-            <div class="col-md-5">
-                <div class="input-group">
-                    <span class="input-group-text">วันที่ระบุ:</span>
-                    <input type="date" id="dateInput" class="form-control">
-                    <button class="btn btn-primary" onclick="fetchData()">ประมวลผล</button>
+
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <div class="summary-title">ค่าเฉลี่ยภาพรวม 8 วัน</div>
+                    <div class="summary-value" id="statAvg">- µg/m³</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-title">ค่าสูงสุดใน 8 วันนี้</div>
+                    <div class="summary-value" id="statMax">- µg/m³</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-title">ประเมินระดับความเสี่ยง</div>
+                    <div style="margin-top: 4px;"><span class="badge bg-good" id="statRisk">-</span></div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Summary Cards -->
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card p-3 text-center">
-                <small class="text-muted">ค่าเฉลี่ยภาพรวม 8 วัน</small>
-                <h3 id="avgPm" class="mt-2">- µg/m³</h3>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card p-3 text-center">
-                <small class="text-muted">ค่าสูงสุดใน 8 วันนี้</small>
-                <h3 id="maxPm" class="mt-2">- µg/m³</h3>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card p-3 text-center">
-                <small class="text-muted">ความแม่นยำโมเดลที่ดีที่สุด</small>
-                <h3 id="accVal" class="mt-1 text-success font-weight-bold">- %</h3>
-                <div><span id="modelBadge" class="badge bg-primary mb-1">-</span></div>
-                <small id="maeSub" class="text-muted" style="font-size: 11px;">(MAE: ± - µg/m³)</small>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card p-3 text-center">
-                <small class="text-muted">ประเมินภาพรวมความเสี่ยง</small>
-                <div class="mt-2"><span id="riskBadge" class="badge bg-secondary badge-aqi">-</span></div>
-            </div>
-        </div>
-    </div>
+        <section class="card">
+            <h2 class="header-title">📖 แผนที่ความหนาแน่นฝุ่น PM2.5 จากภาพถ่ายดาวเทียม</h2>
+            <div id="map" style="margin-top: 12px;"></div>
+        </section>
 
-    <!-- Satellite Map -->
-    <div class="card p-4 mb-4">
-        <h5 class="mb-3">🗺️ แผนที่ความหนาแน่นฝุ่น PM2.5 จากภาพถ่ายดาวเทียม</h5>
-        <div id="map"></div>
-    </div>
+        <section class="card">
+            <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+                <div class="progress-box">
+                    <div style="font-size:1.3rem; font-weight:bold; color:#2563eb;" id="percentText">0%</div>
+                    <div class="progress-bar-container">
+                        <div id="progressBar" class="progress-bar"></div>
+                    </div>
+                    <div id="loadingStatus" style="margin-top: 8px;">กำลังประมวลผล...</div>
+                </div>
+            </div>
 
-    <!-- Chart -->
-    <div class="card p-4 mb-4">
-        <h5 class="mb-3">📈 กราฟแสดงค่าฝุ่น PM2.5 วันนี้ และล่วงหน้า 7 วัน</h5>
-        <div class="chart-container">
-            <canvas id="pmChart"></canvas>
-        </div>
-    </div>
+            <h2 class="header-title">📈 กราฟพยากรณ์ PM2.5 วันนี้ และล่วงหน้า 7 วัน</h2>
+            <div class="chart-container">
+                <canvas id="pm25Chart"></canvas>
+            </div>
+        </section>
 
-    <!-- Table -->
-    <div class="card p-4">
-        <h5>📋 ตารางสรุปรายละเอียดข้อมูลรายวัน</h5>
-        <div class="table-responsive mt-3">
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
+        <section class="card">
+            <h2 class="header-title">📋 สรุปตารางรายละเอียดข้อมูลรายวัน</h2>
+            <table>
+                <thead>
                     <tr>
                         <th>ระยะเวลา</th>
                         <th>วันที่</th>
-                        <th>ค่าจริง (Actual)</th>
-                        <th>ค่าทำนาย/ประมวลผล</th>
+                        <th>ค่าจริง (Excel)</th>
+                        <th>ค่าทำนาย</th>
                         <th>ผลต่าง (Diff)</th>
                         <th>ระดับคุณภาพอากาศ</th>
                     </tr>
                 </thead>
-                <tbody id="tableBody">
-                    <tr><td colspan="6" class="text-center">กำลังโหลดข้อมูล...</td></tr>
-                </tbody>
+                <tbody id="tableBody"></tbody>
             </table>
-        </div>
-    </div>
+        </section>
+    </main>
 
-</div>
+    <script>
+        // 🔗 ใส่ URL ของ Render ที่ Deploy สำเร็จแล้ว
+        const API_BASE_URL = "https://pm2-5-j4k3.onrender.com";
 
-<script>
-    let myChart = null;
-    let satelliteLayer = null;
+        let pmChart = null;
+        let map = null;
+        let stationMarker = null;
 
-    const map = L.map('map').setView([19.167, 99.900], 8);
-    
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap | Data: GEE CAMS PM2.5'
-    }).addTo(map);
+        if (typeof ChartDataLabels !== 'undefined') {
+            Chart.register(ChartDataLabels);
+        }
 
-    L.marker([19.167, 99.900]).addTo(map).bindPopup('<b>จุดตรวจวัด: สนามกีฬาจังหวัดพะเยา</b>').openPopup();
+        function updateProgress(percent, text) {
+            document.getElementById('progressBar').style.width = percent + '%';
+            document.getElementById('percentText').innerText = percent + '%';
+            document.getElementById('loadingStatus').innerText = text;
+        }
 
-    const legend = L.control({ position: 'bottomright' });
-    legend.onAdd = function () {
-        const div = L.DomUtil.create('div', 'legend-box');
-        div.innerHTML = `
-            <strong>ระดับ PM2.5 (µg/m³)</strong><br>
-            <i class="legend-color" style="background: #00e400;"></i> 0 - 15 (ดีมาก)<br>
-            <i class="legend-color" style="background: #ffff00;"></i> 16 - 37 (ปานกลาง)<br>
-            <i class="legend-color" style="background: #ff7e00;"></i> 38 - 75 (เริ่มมีผลกระทบ)<br>
-            <i class="legend-color" style="background: #ff0000;"></i> > 75 (มีผลกระทบ)
-        `;
-        return div;
-    };
-    legend.addTo(map);
+        function getAQIBadge(val) {
+            if (val <= 15) return { text: 'ดีมาก', class: 'bg-good' };
+            if (val <= 37) return { text: 'ปานกลาง', class: 'bg-moderate' };
+            if (val <= 75) return { text: 'เริ่มมีผลกระทบ', class: 'bg-orange' };
+            return { text: 'มีผลกระทบ', class: 'bg-danger' };
+        }
 
-    document.getElementById('dateInput').valueAsDate = new Date();
+        async function initMap() {
+            if (map !== null) return;
+            
+            map = L.map('map').setView([19.2200, 100.0500], 8);
 
-    function getAQIRating(pm) {
-        if (pm === null || pm === undefined) return { label: '-', color: 'bg-secondary' };
-        if (pm <= 15.0) return { label: 'ดีมาก', color: 'bg-success' };
-        if (pm <= 37.5) return { label: 'ปานกลาง', color: 'bg-info' };
-        if (pm <= 75.0) return { label: 'เริ่มมีผลกระทบ', color: 'bg-warning text-dark' };
-        return { label: 'มีผลกระทบต่อสุขภาพ', color: 'bg-danger' };
-    }
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18,
+                attribution: '&copy; OpenStreetMap | Data: GEE CAMS PM2.5'
+            }).addTo(map);
 
-    async function loadSatelliteMap(dateVal) {
-        try {
-            const res = await fetch(`http://127.0.0.1:8000/api/pm25-map-tile?date=${dateVal}`);
-            const data = await res.json();
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/gee-tile`);
+                const data = await response.json();
 
-            if (satelliteLayer) map.removeLayer(satelliteLayer);
-            if (data.tile_url) {
-                satelliteLayer = L.tileLayer(data.tile_url, { opacity: 0.45 }).addTo(map);
+                if (data.status === 'success' && data.tile_url) {
+                    L.tileLayer(data.tile_url, {
+                        maxZoom: 18,
+                        opacity: 0.45,
+                        attribution: 'Layer Data &copy; Google Earth Engine'
+                    }).addTo(map);
+                }
+            } catch (err) {
+                console.warn("ไม่สามารถดึงเลเยอร์ GEE ได้", err);
             }
-        } catch (err) {
-            console.error("ไม่สามารถโหลดแผนที่ดาวเทียมได้:", err);
-        }
-    }
 
-    async function fetchData() {
-        const dateVal = document.getElementById('dateInput').value;
-        if (!dateVal) return alert('กรุณาเลือกวันที่');
+            stationMarker = L.marker([19.2200, 100.0500]).addTo(map)
+                .bindPopup('<b>จุดตรวจวัด: สนามกีฬาจังหวัดพะเยา</b>')
+                .openPopup();
 
-        try {
-            const response = await fetch(`http://127.0.0.1:8000/predict?date=${dateVal}`);
-            const data = await response.json();
+            const legend = L.control({ position: 'bottomright' });
+            legend.onAdd = function (map) {
+                const div = L.DomUtil.create('div', 'info legend');
+                div.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
+                div.style.padding = '10px 14px';
+                div.style.borderRadius = '8px';
+                div.style.boxShadow = '0 2px 6px rgba(0,0,0,0.15)';
+                div.style.fontSize = '12px';
+                div.style.lineHeight = '1.6';
 
-            if (!response.ok) throw new Error(data.detail || 'เกิดข้อผิดพลาด');
+                div.innerHTML = `
+                    <strong style="display:block; margin-bottom:4px; font-size:12px; color:#1e293b;">ระดับ PM2.5 (µg/m³)</strong>
+                    <div style="display:flex; align-items:center; gap:8px;"><span style="background:#00e400; width:12px; height:12px; display:inline-block; border-radius:2px;"></span> 0 - 15 (ดีมาก)</div>
+                    <div style="display:flex; align-items:center; gap:8px;"><span style="background:#ffff00; width:12px; height:12px; display:inline-block; border-radius:2px;"></span> 16 - 37 (ปานกลาง)</div>
+                    <div style="display:flex; align-items:center; gap:8px;"><span style="background:#ff7e00; width:12px; height:12px; display:inline-block; border-radius:2px;"></span> 38 - 75 (เริ่มมีผลกระทบ)</div>
+                    <div style="display:flex; align-items:center; gap:8px;"><span style="background:#ff0000; width:12px; height:12px; display:inline-block; border-radius:2px;"></span> > 75 (มีผลกระทบ)</div>
+                `;
+                return div;
+            };
+            legend.addTo(map);
 
-            renderUI(data.forecast, data.metrics, data.selected_model);
-            loadSatelliteMap(dateVal);
-        } catch (err) {
-            alert('ไม่สามารถดึงข้อมูลได้: ' + err.message);
-        }
-    }
-
-    function renderUI(forecast, metrics, selectedModel) {
-        const labels = forecast.map(d => `${d.day_name}\n(${d.date})`);
-        const values = forecast.map(d => d.predicted);
-
-        const validValues = values.filter(v => v !== null);
-        const avg = (validValues.reduce((a, b) => a + b, 0) / validValues.length).toFixed(1);
-        const max = Math.max(...validValues).toFixed(1);
-        const overallRating = getAQIRating(max);
-
-        document.getElementById('avgPm').innerText = `${avg} µg/m³`;
-        document.getElementById('maxPm').innerText = `${max} µg/m³`;
-        
-        if (metrics) {
-            if (metrics.accuracy !== undefined) {
-                document.getElementById('accVal').innerText = `${metrics.accuracy}%`;
-            }
-            if (metrics.mae !== undefined) {
-                document.getElementById('maeSub').innerText = `(MAE: ± ${metrics.mae} µg/m³)`;
-            }
-        }
-        if (selectedModel) {
-            document.getElementById('modelBadge').innerText = `ชนะเลิศ: ${selectedModel}`;
+            setTimeout(() => { map.invalidateSize(); }, 300);
         }
 
-        const riskBadge = document.getElementById('riskBadge');
-        riskBadge.innerText = overallRating.label;
-        riskBadge.className = `badge badge-aqi ${overallRating.color}`;
+        function renderChart(labels, predictedData) {
+            const ctx = document.getElementById('pm25Chart').getContext('2d');
+            if (pmChart) pmChart.destroy();
 
-        const tableBody = document.getElementById('tableBody');
-        tableBody.innerHTML = forecast.map(d => {
-            const rating = getAQIRating(d.predicted);
-            const actualStr = d.actual !== null ? `${d.actual} µg/m³` : 'N/A';
-            const diffStr = (d.actual !== null && d.predicted !== null) ? `${(d.predicted - d.actual).toFixed(1)}` : '-';
-
-            return `
-                <tr>
-                    <td><strong>${d.day_name}</strong></td>
-                    <td>${d.date}</td>
-                    <td>${actualStr}</td>
-                    <td class="text-primary font-weight-bold"><strong>${d.predicted} µg/m³</strong></td>
-                    <td>${diffStr}</td>
-                    <td><span class="badge ${rating.color}">${rating.label}</span></td>
-                </tr>
-            `;
-        }).join('');
-
-        if (myChart) myChart.destroy();
-        const ctx = document.getElementById('pmChart').getContext('2d');
-        const maxYValue = Math.max(...validValues, 25);
-
-        myChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'ค่าทำนาย/ประมวลผล (µg/m³)',
-                    data: values,
-                    backgroundColor: values.map(v => v > 37.5 ? '#ff7e00' : '#2563eb'),
-                    borderRadius: 6,
-                    barThickness: 36
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    y: { 
-                        beginAtZero: true,
-                        max: Math.ceil(maxYValue * 1.35),
-                        title: { display: true, text: 'PM2.5 (µg/m³)' }
+            pmChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'ค่าทำนาย PM2.5 (µg/m³)',
+                        data: predictedData,
+                        backgroundColor: '#2563eb',
+                        borderRadius: 4,
+                        barPercentage: 0.65
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        datalabels: {
+                            anchor: 'end', align: 'top', offset: 2,
+                            font: { weight: 'bold', size: 11, family: 'Kanit' },
+                            color: '#1e293b',
+                            formatter: (val) => val ? val.toFixed(1) : ''
+                        }
                     },
-                    x: { ticks: { font: { size: 11 } } }
+                    scales: {
+                        y: { beginAtZero: true, grace: '20%', title: { display: true, text: 'PM2.5 (µg/m³)' } },
+                        x: { ticks: { font: { family: 'Kanit', size: 10 } }, grid: { display: false } }
+                    }
                 }
-            },
-            plugins: [{
-                id: 'topDataLabels',
-                afterDatasetDraw(chart) {
-                    const { ctx } = chart;
-                    chart.data.datasets.forEach((dataset, i) => {
-                        const meta = chart.getDatasetMeta(i);
-                        meta.data.forEach((bar, index) => {
-                            const val = dataset.data[index];
-                            if (val !== null && val !== undefined) {
-                                ctx.save();
-                                ctx.fillStyle = '#0f172a';
-                                ctx.font = 'bold 13px Kanit, sans-serif';
-                                ctx.textAlign = 'center';
-                                ctx.textBaseline = 'bottom';
-                                ctx.fillText(val.toFixed(1), bar.x, bar.y - 6);
-                                ctx.restore();
-                            }
-                        });
-                    });
-                }
-            }]
-        });
-    }
+            });
+        }
 
-    fetchData();
-</script>
+        function renderTable(forecastData) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            forecastData.forEach(item => {
+                const diff = (item.actual !== 'N/A') ? Math.abs(item.predicted - item.actual).toFixed(1) : '-';
+                const badge = getAQIBadge(item.predicted);
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${item.period}</strong></td>
+                    <td>${item.date}</td>
+                    <td>${item.actual !== 'N/A' ? item.actual + ' µg/m³' : 'N/A'}</td>
+                    <td><strong style="color: #2563eb;">${item.predicted} µg/m³</strong></td>
+                    <td>${diff}</td>
+                    <td><span class="badge ${badge.class}">${badge.text}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function fetchData() {
+            const dateStr = document.getElementById('dateSelect').value;
+            if (!dateStr) return;
+
+            const loader = document.getElementById('loadingOverlay');
+            loader.style.display = 'flex';
+
+            try {
+                updateProgress(40, "กำลังประมวลผลข้อมูล...");
+                const res = await fetch(`${API_BASE_URL}/predict?date=${dateStr}`);
+                if (!res.ok) throw new Error('เกิดข้อผิดพลาดในการดึงข้อมูล');
+                const data = await res.json();
+
+                updateProgress(80, "กำลังสร้างกราฟและสรุปตาราง...");
+
+                const forecast = data.forecast || [];
+                const predictedValues = forecast.map(f => f.predicted);
+                const todayVal = predictedValues[0] || 0;
+
+                document.getElementById('statAvg').innerText = `${data.summary?.average ?? 0} µg/m³`;
+                document.getElementById('statMax').innerText = `${data.summary?.max_val ?? 0} µg/m³`;
+                
+                const riskBadge = document.getElementById('statRisk');
+                const riskInfo = getAQIBadge(data.summary?.max_val ?? 0);
+                riskBadge.innerText = data.summary?.risk_level ?? 'ดีมาก';
+                riskBadge.className = `badge ${riskInfo.class}`;
+
+                if (stationMarker) {
+                    stationMarker.setPopupContent(`<b>จุดตรวจวัด: สนามกีฬาจังหวัดพะเยา</b><br>ค่าฝุ่นพยากรณ์วันนี้: <b>${todayVal} µg/m³</b>`).openPopup();
+                }
+
+                const labels = forecast.map(item => item.full_label);
+                renderChart(labels, predictedValues);
+                renderTable(forecast);
+
+                updateProgress(100, "ประมวลผลเรียบร้อย!");
+                await new Promise(r => setTimeout(r, 200));
+
+            } catch (err) {
+                console.error(err);
+                alert("เกิดข้อผิดพลาด: " + err.message);
+            } finally {
+                loader.style.display = 'none';
+                updateProgress(0, "");
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            initMap();
+            document.getElementById('dateSelect').value = '2026-08-10';
+            fetchData();
+        });
+    </script>
 </body>
 </html>
