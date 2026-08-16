@@ -4,10 +4,10 @@ import ee
 import pandas as pd
 from datetime import datetime, timedelta
 import os
+import glob
 
 app = FastAPI(title="PM2.5 & GEE Layer API")
 
-# ตั้งค่า CORS เพื่ออนุญาตให้ Frontend (index.html) เรียกใช้ API ได้
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,37 +16,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==============================================================================
-# 🛰️ ส่วนที่ 1: Google Earth Engine (GEE) API
-# ==============================================================================
+# 🛰️ GEE Init
 SERVICE_ACCOUNT_EMAIL = 'gee-pm25-service@neat-episode-505714-g6.iam.gserviceaccount.com'
 KEY_FILE_PATH = 'gee-key.json'
 PROJECT_ID = 'neat-episode-505714-g6'
 
 try:
-    credentials = ee.ServiceAccountCredentials(SERVICE_ACCOUNT_EMAIL, KEY_FILE_PATH)
-    ee.Initialize(credentials, project=PROJECT_ID)
-    print("✅ [GEE] ยืนยันตัวตนและเชื่อมต่อสำเร็จ!")
+    if os.path.exists(KEY_FILE_PATH):
+        credentials = ee.ServiceAccountCredentials(SERVICE_ACCOUNT_EMAIL, KEY_FILE_PATH)
+        ee.Initialize(credentials, project=PROJECT_ID)
+        print("✅ [GEE] Connected!")
+    else:
+        print("⚠️ [GEE] Key file not found!")
 except Exception as e:
-    print("❌ [GEE] ไม่สามารถเชื่อมต่อได้:", e)
+    print("❌ [GEE] Init Error:", e)
 
 
 @app.get("/api/gee-tile")
 def get_gee_tile():
     try:
-        # ขอบเขตพื้นที่ภาคเหนือของประเทศไทย (เชียงราย พะเยา น่าน เชียงใหม่ ฯลฯ)
         roi = ee.Geometry.BBox(97.3, 15.0, 101.5, 20.5)
-
-        # ดึงข้อมูลความหนาแน่น PM2.5 จาก CAMS NRT แบบกระจายตัวทั่วพื้นที่
         dataset = (ee.ImageCollection('ECMWF/CAMS/NRT')
                    .filterBounds(roi)
                    .filterDate('2024-01-01', '2024-12-31')
                    .select('particulate_matter_d_less_than_2_5_um_surface')
                    .mean()
-                   .multiply(1e9)  # แปลงหน่วยเป็น µg/m³
+                   .multiply(1e9)
                    .clip(roi))
 
-        # การกำหนดช่วงสี (เขียว -> เหลือง -> ส้ม -> แดง)
         vis_params = {
             'min': 0,
             'max': 75,
@@ -59,24 +56,20 @@ def get_gee_tile():
         return {"status": "error", "message": str(e)}
 
 
-# ==============================================================================
-# 📊 ส่วนที่ 2: ประมวลผลและพยากรณ์ฝุ่น PM2.5 จาก Excel (2022 - 2026)
-# ==============================================================================
-EXCEL_FILES = [
-    'สนามกีฬาจังหวัดพะเยา ปี 2022.xlsx',
-    'สนามกีฬาจังหวัดพะเยา ปี 2023.xlsx',
-    'สนามกีฬาจังหวัดพะเยา ปี 2024.xlsx',
-    'สนามกีฬาจังหวัดพะเยา ปี 2025.xlsx',
-    'สนามกีฬาจังหวัดพะเยา ปี 2026.xlsx'
-]
-
+# 📊 อ่านไฟล์ Excel ทั้งหมดอัตโนมัติ
 def load_all_excel_data():
     all_dfs = []
-    for filepath in EXCEL_FILES:
-        if os.path.exists(filepath):
+    # ค้นหาไฟล์ .xlsx ทุกไฟล์ในโฟลเดอร์
+    excel_files = glob.glob("*.xlsx")
+    print(f"📁 Found Excel files: {excel_files}")
+
+    for filepath in excel_files:
+        try:
             df = pd.read_excel(filepath, skiprows=3, names=['date_str', 'pm25'])
             df['date'] = pd.to_datetime(df['date_str'], format='%d/%m/%Y', errors='coerce')
             all_dfs.append(df)
+        except Exception as err:
+            print(f"Error reading {filepath}: {err}")
     
     if all_dfs:
         combined = pd.concat(all_dfs, ignore_index=True)
@@ -95,7 +88,12 @@ def predict_pm25(date: str = Query(...)):
     try:
         df = load_all_excel_data()
         if df.empty:
-            return {"status": "error", "message": "ไม่พบไฟล์ข้อมูล Excel ในระบบ"}
+            return {
+                "status": "error", 
+                "message": "ไม่พบข้อมูลในไฟล์ Excel",
+                "summary": {"average": 0, "max_val": 0, "risk_level": "ไม่มีข้อมูล"},
+                "forecast": []
+            }
 
         selected_dt = pd.to_datetime(date)
         pm_dict = df.set_index('date')['pm25'].to_dict()
