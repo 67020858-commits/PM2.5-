@@ -147,7 +147,8 @@
         }
 
         async function fetchWAQIStations() {
-            const bounds = '18.0,98.5,20.2,100.5';
+            // ขยาย Bounds ครอบคลุมทั่วภาคเหนือ (เชียงใหม่ เชียงราย พะเยา ลำปาง น่าน แพร่)
+            const bounds = '17.0,97.5,21.0,101.5';
             try {
                 const res = await fetch(`https://api.waqi.info/map/bounds/?token=${WAQI_TOKEN}&latlng=${bounds}`);
                 const data = await res.json();
@@ -161,19 +162,19 @@
                         const textColor = (aqiVal > 50 && aqiVal <= 100) ? '#000' : '#fff';
 
                         const customIcon = L.divIcon({
-                            className: 'custom-aqi-marker',
-                            html: `<div style="background-color: ${bgColor}; color: ${textColor}; padding: 3px 6px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.4); display: inline-block;">${aqiVal}</div>`,
-                            iconSize: [30, 25],
-                            iconAnchor: [15, 12]
+                            className: '',
+                            html: `<div style="background-color: ${bgColor}; color: ${textColor}; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 12px; border: 2px solid #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.4); text-align: center; white-space: nowrap; display: inline-block;">${aqiVal}</div>`,
+                            iconSize: [40, 25],
+                            iconAnchor: [20, 12]
                         });
 
                         L.marker([station.lat, station.lon], { icon: customIcon })
                             .addTo(map)
                             .bindPopup(`
-                                <div style="font-family: sans-serif; min-width: 150px;">
-                                    <h4 style="margin: 0 0 5px 0; font-size: 13px;">${station.station.name}</h4>
+                                <div style="font-family: sans-serif; min-width: 160px;">
+                                    <h4 style="margin: 0 0 5px 0; font-size: 13px; color:#0f172a;">${station.station.name}</h4>
                                     <p style="margin: 0; font-size: 12px;"><b>AQI เรียลไทม์:</b> <span style="color:${bgColor}; font-weight:bold;">${aqiVal}</span></p>
-                                    <small style="color: #666; font-size: 10px;">ข้อมูลจากสถานีตรวจวัดภายนอก</small>
+                                    <small style="color: #64748b; font-size: 10px;">ข้อมูลจากสถานีตรวจวัดภายนอก (WAQI)</small>
                                 </div>
                             `);
                     });
@@ -186,6 +187,7 @@
         async function initMap() {
             if (map !== null) return;
             
+            // ตั้งค่ามุมมองแผนที่เริ่มต้นครอบคลุมพะเยาและจังหวัดรอบข้าง
             map = L.map('map').setView([19.2200, 100.0500], 8);
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
