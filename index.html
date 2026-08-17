@@ -74,7 +74,7 @@
         </div>
 
         <section class="card">
-            <h2 class="header-title">📖 แผนที่ความหนาแน่นฝุ่น PM2.5 จากภาพถ่ายดาวเทียม</h2>
+            <h2 class="header-title">📖 แผนที่ความหนาแน่นฝุ่น PM2.5 จากภาพถ่ายดาวเทียม และสถานีเรียลไทม์</h2>
             <div id="map" style="margin-top: 12px;"></div>
         </section>
 
@@ -114,8 +114,8 @@
     </main>
 
     <script>
-        // 🔗 ใส่ URL ของ Render ที่ Deploy สำเร็จแล้ว
         const API_BASE_URL = "https://pm2-5-j4k3.onrender.com";
+        const WAQI_TOKEN = '012861731ffb009f24137beadf87089b37fd31bf';
 
         let pmChart = null;
         let map = null;
@@ -138,6 +138,51 @@
             return { text: 'มีผลกระทบ', class: 'bg-danger' };
         }
 
+        function getWAQIColor(aqi) {
+            if (aqi <= 50) return '#009966';
+            if (aqi <= 100) return '#ffde33';
+            if (aqi <= 150) return '#ff9933';
+            if (aqi <= 200) return '#cc0033';
+            return '#660099';
+        }
+
+        async function fetchWAQIStations() {
+            const bounds = '18.0,98.5,20.2,100.5';
+            try {
+                const res = await fetch(`https://api.waqi.info/map/bounds/?token=${WAQI_TOKEN}&latlng=${bounds}`);
+                const data = await res.json();
+
+                if (data.status === 'ok') {
+                    data.data.forEach(station => {
+                        if (station.aqi === '-') return;
+
+                        const aqiVal = parseInt(station.aqi);
+                        const bgColor = getWAQIColor(aqiVal);
+                        const textColor = (aqiVal > 50 && aqiVal <= 100) ? '#000' : '#fff';
+
+                        const customIcon = L.divIcon({
+                            className: 'custom-aqi-marker',
+                            html: `<div style="background-color: ${bgColor}; color: ${textColor}; padding: 3px 6px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.4); display: inline-block;">${aqiVal}</div>`,
+                            iconSize: [30, 25],
+                            iconAnchor: [15, 12]
+                        });
+
+                        L.marker([station.lat, station.lon], { icon: customIcon })
+                            .addTo(map)
+                            .bindPopup(`
+                                <div style="font-family: sans-serif; min-width: 150px;">
+                                    <h4 style="margin: 0 0 5px 0; font-size: 13px;">${station.station.name}</h4>
+                                    <p style="margin: 0; font-size: 12px;"><b>AQI เรียลไทม์:</b> <span style="color:${bgColor}; font-weight:bold;">${aqiVal}</span></p>
+                                    <small style="color: #666; font-size: 10px;">ข้อมูลจากสถานีตรวจวัดภายนอก</small>
+                                </div>
+                            `);
+                    });
+                }
+            } catch (err) {
+                console.warn("ไม่สามารถดึงข้อมูลสถานี WAQI ได้:", err);
+            }
+        }
+
         async function initMap() {
             if (map !== null) return;
             
@@ -145,7 +190,7 @@
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 18,
-                attribution: '&copy; OpenStreetMap | Data: GEE CAMS PM2.5'
+                attribution: '&copy; OpenStreetMap | Data: GEE CAMS PM2.5 & WAQI'
             }).addTo(map);
 
             try {
@@ -164,8 +209,10 @@
             }
 
             stationMarker = L.marker([19.2200, 100.0500]).addTo(map)
-                .bindPopup('<b>จุดตรวจวัด: สนามกีฬาจังหวัดพะเยา</b>')
+                .bindPopup('<b>จุดตรวจวัดหลัก: สนามกีฬาจังหวัดพะเยา</b>')
                 .openPopup();
+
+            fetchWAQIStations();
 
             const legend = L.control({ position: 'bottomright' });
             legend.onAdd = function (map) {
@@ -275,7 +322,7 @@
                 riskBadge.className = `badge ${riskInfo.class}`;
 
                 if (stationMarker) {
-                    stationMarker.setPopupContent(`<b>จุดตรวจวัด: สนามกีฬาจังหวัดพะเยา</b><br>ค่าฝุ่นพยากรณ์วันนี้: <b>${todayVal} µg/m³</b>`).openPopup();
+                    stationMarker.setPopupContent(`<b>จุดตรวจวัดหลัก: สนามกีฬาจังหวัดพะเยา</b><br>ค่าฝุ่นพยากรณ์วันนี้: <b>${todayVal} µg/m³</b>`).openPopup();
                 }
 
                 const labels = forecast.map(item => item.full_label);
